@@ -68,6 +68,33 @@ class HSR_Admin {
             'hubspot-referrals-settings',
             array($this, 'render_settings')
         );
+        
+        add_submenu_page(
+            'hubspot-referrals',
+            __('Form Builder', 'hubspot-referrals'),
+            __('Form Builder', 'hubspot-referrals'),
+            'manage_options',
+            'hubspot-referrals-form-builder',
+            'HSR_Form_Builder::render_page_static'
+        );
+        
+        add_submenu_page(
+            'hubspot-referrals',
+            __('Bulk Import', 'hubspot-referrals'),
+            __('Bulk Import', 'hubspot-referrals'),
+            'manage_options',
+            'hubspot-referrals-import',
+            array($this, 'render_import')
+        );
+        
+        add_submenu_page(
+            'hubspot-referrals',
+            __('Webhook Logs', 'hubspot-referrals'),
+            __('Webhook Logs', 'hubspot-referrals'),
+            'manage_options',
+            'hubspot-referrals-logs',
+            array($this, 'render_logs')
+        );
     }
     
     /**
@@ -178,8 +205,20 @@ class HSR_Admin {
                         <div class="form-field"></div>
                     </div>
                     
-                    <button type="submit" class="button button-primary button-large">
-                        <?php esc_html_e('Generate Referral Link', 'hubspot-referrals'); ?>
+                    <div class="form-row" style="margin-top: 20px; background: #f0f6ff; padding: 15px; border-radius: 6px; border-left: 4px solid #667eea;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="gen_send_email" name="send_email" value="1" checked style="margin-right: 10px; width: 18px; height: 18px;">
+                            <span style="font-weight: 500;">
+                                📧 <?php esc_html_e('Send welcome email to partner with their referral link', 'hubspot-referrals'); ?>
+                            </span>
+                        </label>
+                        <p style="margin: 8px 0 0 28px; font-size: 13px; color: #666;">
+                            <?php esc_html_e('The partner will receive a professional email with their unique referral code and instructions on how to use it.', 'hubspot-referrals'); ?>
+                        </p>
+                    </div>
+                    
+                    <button type="submit" class="button button-primary button-large" style="margin-top: 20px;">
+                        <?php esc_html_e('Generate & Send Referral Link', 'hubspot-referrals'); ?>
                     </button>
                 </form>
                 
@@ -319,6 +358,247 @@ class HSR_Admin {
     public function render_settings() {
         // Delegate to settings class
         HSR_Settings::instance()->render_page();
+    }
+    
+    /**
+     * Render bulk import page
+     */
+    public function render_import() {
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Bulk Import Partners', 'hubspot-referrals'); ?></h1>
+            
+            <div class="card" style="max-width: 800px;">
+                <h2><?php esc_html_e('Import from CSV', 'hubspot-referrals'); ?></h2>
+                <p><?php esc_html_e('Upload a CSV file with partner information to create multiple referral links at once.', 'hubspot-referrals'); ?></p>
+                
+                <div class="hsr-import-instructions" style="background: #f0f6ff; padding: 15px; border-left: 4px solid #2271b1; margin: 20px 0;">
+                    <h3 style="margin-top: 0;"><?php esc_html_e('CSV Format Requirements:', 'hubspot-referrals'); ?></h3>
+                    <p><?php esc_html_e('Your CSV file should have these columns (header row required):', 'hubspot-referrals'); ?></p>
+                    <ul style="list-style: disc; margin-left: 20px;">
+                        <li><strong>first_name</strong> - <?php esc_html_e('Required', 'hubspot-referrals'); ?></li>
+                        <li><strong>last_name</strong> - <?php esc_html_e('Required', 'hubspot-referrals'); ?></li>
+                        <li><strong>email</strong> - <?php esc_html_e('Required', 'hubspot-referrals'); ?></li>
+                        <li><strong>organization</strong> <?php esc_html_e('or', 'hubspot-referrals'); ?> <strong>company</strong> - <?php esc_html_e('Optional', 'hubspot-referrals'); ?></li>
+                        <li><strong>referral_code</strong> - <?php esc_html_e('Optional (will auto-generate if empty)', 'hubspot-referrals'); ?></li>
+                    </ul>
+                    <p><a href="#" onclick="hsrDownloadTemplate(); return false;"><?php esc_html_e('Download CSV Template →', 'hubspot-referrals'); ?></a></p>
+                </div>
+                
+                <form id="hsr-bulk-import-form">
+                    <?php wp_nonce_field('hsr_bulk_import', 'hsr_import_nonce'); ?>
+                    
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row">
+                                <label for="hsr_csv_file"><?php esc_html_e('CSV File', 'hubspot-referrals'); ?></label>
+                            </th>
+                            <td>
+                                <input type="file" id="hsr_csv_file" accept=".csv" required>
+                                <p class="description"><?php esc_html_e('Select a CSV file to upload', 'hubspot-referrals'); ?></p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">
+                                <label for="hsr_send_welcome"><?php esc_html_e('Send Emails', 'hubspot-referrals'); ?></label>
+                            </th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" id="hsr_send_welcome" name="send_emails" value="1" checked>
+                                    <?php esc_html_e('Send welcome emails to all imported partners', 'hubspot-referrals'); ?>
+                                </label>
+                                <p class="description"><?php esc_html_e('Partners will receive their referral link via email', 'hubspot-referrals'); ?></p>
+                            </td>
+                        </tr>
+                    </table>
+                    
+                    <p class="submit">
+                        <button type="submit" class="button button-primary button-large">
+                            <?php esc_html_e('Import Partners', 'hubspot-referrals'); ?>
+                        </button>
+                    </p>
+                    
+                    <div id="hsr-import-progress" style="display: none; margin-top: 20px;">
+                        <div class="notice notice-info">
+                            <p><span class="spinner is-active" style="float: none;"></span> <?php esc_html_e('Importing...', 'hubspot-referrals'); ?></p>
+                        </div>
+                    </div>
+                    
+                    <div id="hsr-import-result" style="display: none; margin-top: 20px;"></div>
+                </form>
+            </div>
+        </div>
+        
+        <script>
+        function hsrDownloadTemplate() {
+            const csv = 'first_name,last_name,email,organization,referral_code\nJohn,Smith,john@example.com,Acme Corp,\nJane,Doe,jane@example.com,Example Inc,janedoe';
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'referral-import-template.csv';
+            a.click();
+        }
+        
+        jQuery(document).ready(function($) {
+            $('#hsr-bulk-import-form').on('submit', function(e) {
+                e.preventDefault();
+                
+                const fileInput = document.getElementById('hsr_csv_file');
+                const file = fileInput.files[0];
+                
+                if (!file) {
+                    alert('<?php esc_html_e('Please select a CSV file', 'hubspot-referrals'); ?>');
+                    return;
+                }
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const csvData = e.target.result;
+                    
+                    $('#hsr-import-progress').show();
+                    $('#hsr-import-result').hide();
+                    $('button[type="submit"]').prop('disabled', true);
+                    
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'hsr_bulk_import',
+                            nonce: $('#hsr_import_nonce').val(),
+                            csv_data: csvData,
+                            send_emails: $('#hsr_send_welcome').is(':checked') ? '1' : '0'
+                        },
+                        success: function(response) {
+                            $('#hsr-import-progress').hide();
+                            $('button[type="submit"]').prop('disabled', false);
+                            
+                            if (response.success) {
+                                let html = '<div class="notice notice-success"><p><strong>' + response.data.message + '</strong></p>';
+                                if (response.data.errors && response.data.errors.length > 0) {
+                                    html += '<p><?php esc_html_e('Errors:', 'hubspot-referrals'); ?></p><ul style="list-style: disc; margin-left: 20px;">';
+                                    response.data.errors.forEach(function(error) {
+                                        html += '<li>' + error + '</li>';
+                                    });
+                                    html += '</ul>';
+                                }
+                                html += '</div>';
+                                $('#hsr-import-result').html(html).show();
+                                
+                                // Reset form
+                                fileInput.value = '';
+                            } else {
+                                $('#hsr-import-result').html('<div class="notice notice-error"><p>' + (response.data.message || '<?php esc_html_e('Import failed', 'hubspot-referrals'); ?>') + '</p></div>').show();
+                            }
+                        },
+                        error: function() {
+                            $('#hsr-import-progress').hide();
+                            $('button[type="submit"]').prop('disabled', false);
+                            $('#hsr-import-result').html('<div class="notice notice-error"><p><?php esc_html_e('Network error. Please try again.', 'hubspot-referrals'); ?></p></div>').show();
+                        }
+                    });
+                };
+                reader.readAsText(file);
+            });
+        });
+        </script>
+        <?php
+    }
+    
+    /**
+     * Render webhook logs page
+     */
+    public function render_logs() {
+        $logs = HSR_Webhook::get_logs();
+        
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Webhook Activity Logs', 'hubspot-referrals'); ?></h1>
+            
+            <div class="card" style="max-width: 900px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <div>
+                        <h2 style="margin: 0;"><?php esc_html_e('Recent Webhook Events', 'hubspot-referrals'); ?></h2>
+                        <p style="margin: 5px 0 0 0;"><?php esc_html_e('Last 100 webhook requests received', 'hubspot-referrals'); ?></p>
+                    </div>
+                    <div>
+                        <button type="button" class="button" onclick="location.reload()">
+                            🔄 <?php esc_html_e('Refresh', 'hubspot-referrals'); ?>
+                        </button>
+                        <button type="button" class="button" onclick="hsrClearLogs()">
+                            🗑️ <?php esc_html_e('Clear Logs', 'hubspot-referrals'); ?>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="notice notice-info">
+                    <p><strong><?php esc_html_e('Your Webhook URL:', 'hubspot-referrals'); ?></strong></p>
+                    <code><?php echo esc_html(rest_url('hubspot-referrals/v1/webhook')); ?></code>
+                    <p style="margin-top: 10px;">
+                        <a href="https://app.hubspot.com/integrations-settings" target="_blank">
+                            <?php esc_html_e('Configure in HubSpot →', 'hubspot-referrals'); ?>
+                        </a>
+                    </p>
+                </div>
+                
+                <?php if (empty($logs)): ?>
+                    <p><?php esc_html_e('No webhook events received yet.', 'hubspot-referrals'); ?></p>
+                <?php else: ?>
+                    <table class="wp-list-table widefat fixed striped">
+                        <thead>
+                            <tr>
+                                <th style="width: 150px;"><?php esc_html_e('Time', 'hubspot-referrals'); ?></th>
+                                <th style="width: 100px;"><?php esc_html_e('Type', 'hubspot-referrals'); ?></th>
+                                <th><?php esc_html_e('Details', 'hubspot-referrals'); ?></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($logs as $log): ?>
+                                <tr>
+                                    <td><?php echo esc_html($log['timestamp']); ?></td>
+                                    <td>
+                                        <?php 
+                                        $badge_color = $log['type'] === 'success' ? '#28a745' : ($log['type'] === 'error' ? '#dc3545' : '#6c757d');
+                                        ?>
+                                        <span style="background: <?php echo esc_attr($badge_color); ?>; color: white; padding: 3px 8px; border-radius: 3px; font-size: 11px; text-transform: uppercase;">
+                                            <?php echo esc_html($log['type']); ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <details>
+                                            <summary style="cursor: pointer;">
+                                                <?php 
+                                                if (is_array($log['data'])) {
+                                                    echo esc_html(wp_json_encode($log['data'], JSON_PRETTY_PRINT));
+                                                } else {
+                                                    echo esc_html($log['data']);
+                                                }
+                                                ?>
+                                            </summary>
+                                            <pre style="background: #f5f5f5; padding: 10px; margin-top: 10px; overflow: auto;"><?php echo esc_html(wp_json_encode($log['data'], JSON_PRETTY_PRINT)); ?></pre>
+                                        </details>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+            </div>
+        </div>
+        
+        <script>
+        function hsrClearLogs() {
+            if (confirm('<?php esc_html_e('Are you sure you want to clear all webhook logs?', 'hubspot-referrals'); ?>')) {
+                jQuery.post(ajaxurl, {
+                    action: 'hsr_clear_logs',
+                    nonce: '<?php echo wp_create_nonce('hsr_clear_logs'); ?>'
+                }, function() {
+                    location.reload();
+                });
+            }
+        }
+        </script>
+        <?php
     }
     
     /**

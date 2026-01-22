@@ -319,6 +319,9 @@ class HSR_API {
             }
         }
         
+        // Cache for 5 minutes
+        set_transient($cache_key, $referrals, 5 * MINUTE_IN_SECONDS);
+        
         return $referrals;
     }
     
@@ -429,5 +432,212 @@ class HSR_API {
             'success' => false,
             'message' => sprintf(__('API returned status %d', 'hubspot-referrals'), $result['status'])
         );
+    }
+    
+    /**
+     * Enroll contact in HubSpot workflow
+     * 
+     * @param string $email Contact email to enroll
+     * @param int $workflow_id HubSpot workflow ID
+     * @return bool Success status
+     */
+    public function enroll_in_workflow($email, $workflow_id) {
+        if (empty($email) || empty($workflow_id)) {
+            return false;
+        }
+        
+        // HubSpot Workflows API v3 endpoint
+        $result = $this->request("/automation/v4/flows/{$workflow_id}/enrollments/contacts", 'POST', array(
+            'emails' => array($email)
+        ));
+        
+        if (is_wp_error($result)) {
+            error_log('HSR: Failed to enroll in workflow - ' . $result->get_error_message());
+            return false;
+        }
+        
+        return $result['status'] >= 200 && $result['status'] < 300;
+    }
+    
+    /**
+     * Find contact by email
+     */
+    public function find_contact_by_email($email) {
+        if (empty($email)) {
+            return false;
+        }
+        
+        // Check cache first
+        $cache_key = 'hsr_contact_' . md5($email);
+        $cached = get_transient($cache_key);
+        
+        if ($cached !== false) {
+            return $cached;
+        }
+        
+        $result = $this->request('/crm/v3/objects/contacts/search', 'POST', array(
+            'filterGroups' => array(
+                array(
+                    'filters' => array(
+                        array(
+                            'propertyName' => 'email',
+                            'operator' => 'EQ',
+                            'value' => $email
+                        )
+                    )
+                )
+            ),
+            'properties' => array(
+                'firstname',
+                'lastname',
+                'email',
+                'company',
+                'referral_code',
+                'referral_clicks',
+                'conversion_count',
+                'last_referral_click',
+                'last_conversion_date'
+            ),
+            'limit' => 1
+        ));
+        
+        if (is_wp_error($result) || empty($result['data']['results'][0])) {
+            return false;
+        }
+        
+        $contact = $result['data']['results'][0];
+        
+        // Cache for 5 minutes
+        set_transient($cache_key, $contact, 5 * MINUTE_IN_SECONDS);
+        
+        return $contact;
+    }
+    
+    /**
+     * Find contact by referral code
+     */
+    public function find_contact_by_referral_code($code) {
+        if (empty($code)) {
+            return false;
+        }
+        
+        $cache_key = 'hsr_referrer_' . md5($code);
+        $cached = get_transient($cache_key);
+        
+        if ($cached !== false) {
+            return $cached;
+        }
+        
+        $result = $this->request('/crm/v3/objects/contacts/search', 'POST', array(
+            'filterGroups' => array(
+                array(
+                    'filters' => array(
+                        array(
+                            'propertyName' => 'referral_code',
+                            'operator' => 'EQ',
+                            'value' => $code
+                        )
+                    )
+                )
+            ),
+            'properties' => array(
+                'firstname',
+                'lastname',
+                'email',
+                'company',
+                'referral_code',
+                'conversion_count',
+                'last_conversion_date'
+            ),
+            'limit' => 1
+        ));
+        
+        if (is_wp_error($result) || empty($result['data']['results'][0])) {
+            return false;
+        }
+        
+        $contact = $result['data']['results'][0];
+        
+        // Cache for 5 minutes
+        set_transient($cache_key, $contact, 5 * MINUTE_IN_SECONDS);
+        
+        return $contact;
+    }
+    
+    /**
+     * Get recent conversions for a referral code
+     */
+    public function get_recent_conversions($referral_code, $limit = 10) {
+        $result = $this->request('/crm/v3/objects/contacts/search', 'POST', array(
+            'filterGroups' => array(
+                array(
+                    'filters' => array(
+                        array(
+                            'propertyName' => 'referral_source',
+                            'operator' => 'EQ',
+                            'value' => $referral_code
+                        )
+                    )
+                )
+            ),
+            'properties' => array(
+                'firstname',
+                'lastname',
+                'email',
+                'createdate'
+            ),
+            'sorts' => array(
+                array(
+                    'propertyName' => 'createdate',
+                    'direction' => 'DESCENDING'
+                )
+            ),
+            'limit' => $limit
+        ));
+        
+        if (is_wp_error($result) || empty($result['data']['results'])) {
+            return array();
+        }
+        
+        $conversions = array();
+        foreach ($result['data']['results'] as $contact) {
+            $props = $contact['properties'];
+            $conversions[] = array(
+                'name' => ($props['firstname'] ?? '') . ' ' . ($props['lastname'] ?? ''),
+                'email' => $props['email'] ?? '',
+                'date' => !empty($props['createdate']) ? date('M j, Y', strtotime($props['createdate'])) : 'N/A'
+            );
+        }
+        
+        return $conversions;
+    }
+    
+    /**
+     * Get contact by ID
+     */
+    public function get_contact($contact_id) {
+        if (empty($contact_id)) {
+            return new WP_Error('invalid_id', 'Invalid contact ID');
+        }
+        
+        return $this->request("/crm/v3/objects/contacts/{$contact_id}", 'GET');
+    }
+    
+    /**
+     * Update contact properties
+     */
+    public function update_contact($contact_id, $properties) {
+        if (empty($contact_id) || empty($properties)) {
+            return false;
+        }
+        
+        $result = $this->request("/crm/v3/objects/contacts/{$contact_id}", 'PATCH', array(
+            'properties' => $properties
+        ));
+        
+        // Clear cache
+        delete_transient('hsr_api_cache_referrals');
+        
+        return !is_wp_error($result);
     }
 }

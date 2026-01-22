@@ -63,6 +63,11 @@ final class HubSpot_Referrals {
         require_once HSR_PLUGIN_DIR . 'includes/class-hsr-admin.php';
         require_once HSR_PLUGIN_DIR . 'includes/class-hsr-settings.php';
         require_once HSR_PLUGIN_DIR . 'includes/class-hsr-ajax.php';
+        require_once HSR_PLUGIN_DIR . 'includes/class-hsr-email.php';
+        require_once HSR_PLUGIN_DIR . 'includes/class-hsr-shortcodes.php';
+        require_once HSR_PLUGIN_DIR . 'includes/class-hsr-cron.php';
+        require_once HSR_PLUGIN_DIR . 'includes/class-hsr-webhook.php';
+        require_once HSR_PLUGIN_DIR . 'includes/class-hsr-form-builder.php';
     }
     
     /**
@@ -93,7 +98,10 @@ final class HubSpot_Referrals {
                 'hubspot_portal_id' => '',
                 'cookie_duration' => 30,
                 'referral_param' => 'referral_source',
-                'contact_page' => '/contact/'
+                'contact_page' => '/contact/',
+                'email_method' => 'wordpress',
+                'hubspot_workflow_id' => '',
+                'send_monthly_stats' => '1'
             ));
         }
         
@@ -111,6 +119,12 @@ final class HubSpot_Referrals {
         // Clear transients
         delete_transient('hsr_referral_data');
         
+        // Unschedule cron jobs
+        $timestamp = wp_next_scheduled('hsr_monthly_stats_cron');
+        if ($timestamp) {
+            wp_unschedule_event($timestamp, 'hsr_monthly_stats_cron');
+        }
+        
         // Flush rewrite rules
         flush_rewrite_rules();
     }
@@ -125,14 +139,24 @@ final class HubSpot_Referrals {
         // Initialize components
         HSR_Tracker::instance();
         HSR_Ajax::instance();
+        HSR_Email::instance();
+        HSR_Shortcodes::instance();
+        HSR_Webhook::instance();
+        HSR_Cron::instance();
+        
+        // Initialize admin components
+        if (is_admin()) {
+            HSR_Admin::instance();
+            HSR_Form_Builder::instance();
+            HSR_Settings::instance();
+        }
     }
     
     /**
      * Admin initialization
      */
     public function admin_init() {
-        HSR_Admin::instance();
-        HSR_Settings::instance();
+        // Additional admin initialization if needed
     }
     
     /**
@@ -140,6 +164,14 @@ final class HubSpot_Referrals {
      */
     public function enqueue_frontend_scripts() {
         $settings = get_option('hsr_settings', array());
+        
+        // Enqueue public form CSS
+        wp_enqueue_style(
+            'hsr-public-styles',
+            HSR_PLUGIN_URL . 'assets/css/public.css',
+            array(),
+            HSR_VERSION
+        );
         
         wp_enqueue_script(
             'hsr-referral-tracker',
@@ -168,6 +200,9 @@ final class HubSpot_Referrals {
             return;
         }
         
+        // Enqueue WordPress color picker
+        wp_enqueue_style('wp-color-picker');
+        
         wp_enqueue_style(
             'hsr-admin-styles',
             HSR_PLUGIN_URL . 'assets/css/admin.css',
@@ -178,7 +213,7 @@ final class HubSpot_Referrals {
         wp_enqueue_script(
             'hsr-admin-scripts',
             HSR_PLUGIN_URL . 'assets/js/admin.js',
-            array('jquery'),
+            array('jquery', 'wp-color-picker'),
             HSR_VERSION,
             true
         );

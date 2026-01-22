@@ -100,6 +100,38 @@ class HSR_Settings {
             'hsr_tracking_section'
         );
         
+        // Email Settings Section
+        add_settings_section(
+            'hsr_email_section',
+            __('Email Configuration', 'hubspot-referrals'),
+            array($this, 'render_email_section'),
+            'hubspot-referrals-settings'
+        );
+        
+        add_settings_field(
+            'email_method',
+            __('Email Method', 'hubspot-referrals'),
+            array($this, 'render_email_method_field'),
+            'hubspot-referrals-settings',
+            'hsr_email_section'
+        );
+        
+        add_settings_field(
+            'hubspot_workflow_id',
+            __('HubSpot Workflow ID (optional)', 'hubspot-referrals'),
+            array($this, 'render_workflow_id_field'),
+            'hubspot-referrals-settings',
+            'hsr_email_section'
+        );
+        
+        add_settings_field(
+            'send_monthly_stats',
+            __('Monthly Stats Emails', 'hubspot-referrals'),
+            array($this, 'render_monthly_stats_field'),
+            'hubspot-referrals-settings',
+            'hsr_email_section'
+        );
+        
         add_settings_field(
             'contact_page',
             __('Contact Page Path', 'hubspot-referrals'),
@@ -120,6 +152,9 @@ class HSR_Settings {
         $sanitized['referral_param'] = sanitize_key($input['referral_param'] ?? 'referral_source');
         $sanitized['cookie_duration'] = absint($input['cookie_duration'] ?? 30);
         $sanitized['contact_page'] = sanitize_text_field($input['contact_page'] ?? '/contact/');
+        $sanitized['email_method'] = sanitize_text_field($input['email_method'] ?? 'wordpress');
+        $sanitized['hubspot_workflow_id'] = sanitize_text_field($input['hubspot_workflow_id'] ?? '');
+        $sanitized['send_monthly_stats'] = isset($input['send_monthly_stats']) ? '1' : '0';
         
         // Ensure cookie duration is reasonable
         if ($sanitized['cookie_duration'] < 1) {
@@ -144,6 +179,80 @@ class HSR_Settings {
      */
     public function render_tracking_section() {
         echo '<p>' . esc_html__('Configure how referrals are tracked on your site.', 'hubspot-referrals') . '</p>';
+    }
+    
+    /**
+     * Render email section description
+     */
+    public function render_email_section() {
+        echo '<p>' . esc_html__('Choose how to send emails to partners. Use WordPress for simple setup, or HubSpot for better deliverability and tracking.', 'hubspot-referrals') . '</p>';
+    }
+    
+    /**
+     * Render email method field
+     */
+    public function render_email_method_field() {
+        $settings = get_option($this->option_name, array());
+        $value = $settings['email_method'] ?? 'wordpress';
+        ?>
+        <select name="<?php echo esc_attr($this->option_name); ?>[email_method]" id="hsr_email_method">
+            <option value="wordpress" <?php selected($value, 'wordpress'); ?>>
+                <?php esc_html_e('WordPress (wp_mail)', 'hubspot-referrals'); ?>
+            </option>
+            <option value="hubspot" <?php selected($value, 'hubspot'); ?>>
+                <?php esc_html_e('HubSpot (via Workflows)', 'hubspot-referrals'); ?>
+            </option>
+            <option value="none" <?php selected($value, 'none'); ?>>
+                <?php esc_html_e('None (manual only)', 'hubspot-referrals'); ?>
+            </option>
+        </select>
+        <p class="description">
+            <?php esc_html_e('WordPress: Uses wp_mail() to send emails directly. HubSpot: Triggers workflows in HubSpot for better tracking. None: No automatic emails sent.', 'hubspot-referrals'); ?>
+        </p>
+        <?php
+    }
+    
+    /**
+     * Render workflow ID field
+     */
+    public function render_workflow_id_field() {
+        $settings = get_option($this->option_name, array());
+        $value = $settings['hubspot_workflow_id'] ?? '';
+        ?>
+        <input type="text" 
+               name="<?php echo esc_attr($this->option_name); ?>[hubspot_workflow_id]" 
+               value="<?php echo esc_attr($value); ?>" 
+               class="regular-text"
+               id="hsr_workflow_id"
+               placeholder="12345678">
+        <p class="description">
+            <?php esc_html_e('If using HubSpot email method, enter the Workflow ID to trigger when a new partner enrolls. The workflow should send welcome emails.', 'hubspot-referrals'); ?>
+            <br>
+            <a href="https://knowledge.hubspot.com/workflows/trigger-a-workflow-with-the-workflows-api" target="_blank">
+                <?php esc_html_e('Learn about HubSpot Workflow API →', 'hubspot-referrals'); ?>
+            </a>
+        </p>
+        <?php
+    }
+    
+    /**
+     * Render monthly stats field
+     */
+    public function render_monthly_stats_field() {
+        $settings = get_option($this->option_name, array());
+        $value = $settings['send_monthly_stats'] ?? '1';
+        ?>
+        <label>
+            <input type="checkbox" 
+                   name="<?php echo esc_attr($this->option_name); ?>[send_monthly_stats]" 
+                   value="1" 
+                   <?php checked($value, '1'); ?>>
+            <?php esc_html_e('Send monthly performance stats to partners', 'hubspot-referrals'); ?>
+        </label>
+        <p class="description">
+            <?php esc_html_e('Automatically email partners on the 1st of each month with their referral statistics.', 'hubspot-referrals'); ?>
+        </p>
+        <?php
     }
     
     /**

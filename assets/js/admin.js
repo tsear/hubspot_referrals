@@ -15,6 +15,16 @@
     function init() {
         bindGeneratorForm();
         bindSearchFilter();
+        initColorPickers();
+    }
+    
+    /**
+     * Initialize WordPress color pickers
+     */
+    function initColorPickers() {
+        if ($.fn.wpColorPicker) {
+            $('.hsr-color-picker').wpColorPicker();
+        }
     }
 
     /**
@@ -40,12 +50,20 @@
                     last_name: $('#gen_last_name').val(),
                     email: $('#gen_email').val(),
                     organization: $('#gen_organization').val(),
-                    custom_code: $('#gen_custom_code').val()
+                    custom_code: $('#gen_custom_code').val(),
+                    send_email: $('#gen_send_email').is(':checked') ? '1' : '0'
                 },
                 success: function(response) {
                     if (response.success) {
                         $('#generated-link').val(response.data.referral_link);
                         $('#generated-code').text(response.data.referral_code);
+                        
+                        // Show email sent message if applicable
+                        if (response.data.email_sent) {
+                            const emailMsg = '<div style="background: #d4edda; color: #155724; padding: 12px; border-radius: 4px; margin-bottom: 15px; border-left: 4px solid #28a745;">✓ Welcome email sent successfully!</div>';
+                            $('#hsr-generator-result .result-success').prepend(emailMsg);
+                        }
+                        
                         $form.hide();
                         $('#hsr-generator-result').fadeIn();
                     } else {
