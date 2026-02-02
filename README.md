@@ -11,12 +11,14 @@ A complete WordPress referral management system with deep HubSpot CRM integratio
 - **🎨 Form Builder** - Visual customization with live preview and 14+ styling options
 - **📧 Flexible Email Delivery** - WordPress wp_mail, HubSpot Workflows API, or manual handling
 - **👤 Partner Dashboard** - Self-service portal for partners to view their stats
+- **🏢 Partner Directory** - Public showcase of partners with Flowbite card grid layout
 - **📥 Bulk Import/Export** - CSV import for existing partners, export for reporting
 - **🔔 Webhook Receiver** - Real-time conversion notifications from HubSpot
 - **📝 Webhook Logs** - View and debug incoming webhook activity
 
 ### Admin Tools
 - **Admin Dashboard** - Overview of all referrers with click/conversion stats
+- **Directory Management** - Toggle partner visibility, edit logos/descriptions, set display order
 - **Form Builder** - Dedicated UI for customizing form appearance and behavior
 - **Settings Panel** - HubSpot configuration, tracking options, email settings
 - **Bulk Operations** - Import multiple partners via CSV, export current data
@@ -25,6 +27,7 @@ A complete WordPress referral management system with deep HubSpot CRM integratio
 ### Frontend Features
 - **Request Form Shortcode** - Beautiful, customizable referral signup form
 - **Partner Dashboard Shortcode** - Let partners view their own performance
+- **Partner Directory Shortcode** - Display featured partners in card grid layout
 - **Cookie-Based Tracking** - 30-day (configurable) referral attribution
 - **Custom Code Support** - Let partners choose their own referral codes
 
@@ -74,6 +77,11 @@ In HubSpot, go to **Settings → Data Management → Properties** and create the
 | Referral Source | `referral_source` | Single-line text | Which partner referred this lead |
 | Click Count | `click_count` | Number | Total clicks on this partner's link |
 | Conversion Count | `conversion_count` | Number | Total conversions generated |
+| Logo URL | `logo_url` | Single-line text | Partner logo image URL (for directory) |
+| Directory Description | `directory_description` | Multi-line text | Partner description for public directory |
+| Website URL | `website_url` | Single-line text | Partner's website link |
+| Show in Directory | `show_in_directory` | Single checkbox | Display partner in public directory |
+| Directory Order | `directory_order` | Number | Sort order for directory display (0-999) |
 
 ### 4. Set Up Conversion Tracking (Optional)
 
@@ -171,6 +179,42 @@ Partners log in with their email to see:
 - Total conversions generated
 - Their unique referral link
 - One-click link copying
+
+### Partner Directory
+
+Display a public showcase of featured partners:
+
+```
+[hsr_partner_directory]
+```
+
+**Available Attributes:**
+
+```
+[hsr_partner_directory 
+  columns="3"              // Number of columns: 2, 3, or 4
+  show_description="true"  // Show partner descriptions
+  max_partners="100"       // Maximum number to display
+]
+```
+
+**Features:**
+- Flowbite card grid design matching MissionGranted site
+- Responsive layout (mobile-friendly)
+- Partner logo display with fallback placeholder
+- "Learn More" button linking to partner website
+- Automatically filters partners with `show_in_directory` = true
+- Sorted by `directory_order` field (lower numbers first)
+
+**Managing Directory Partners:**
+1. Go to **Referrals → Dashboard**
+2. Toggle "Directory" switch to show/hide partners
+3. Click ✏️ edit icon to:
+   - Upload partner logo URL
+   - Add directory description
+   - Set website URL
+   - Set display order (0-999, lower appears first)
+4. Partners appear instantly in directory shortcode
 
 ## 🎨 Form Customization
 

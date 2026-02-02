@@ -3,7 +3,7 @@
  * Plugin Name: HubSpot Referrals
  * Plugin URI: https://github.com/tsear/hubspot_referrals
  * Description: A complete referral tracking system that integrates with HubSpot CRM. Track referral codes, conversions, and manage your referral program from WordPress.
- * Version: 1.0.0
+ * Version: 1.2.0
  * Author: Tyler Sear
  * Author URI: https://smartgrantsolutions.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('HSR_VERSION', '1.0.0');
+define('HSR_VERSION', '1.2.0');
 define('HSR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('HSR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('HSR_PLUGIN_BASENAME', plugin_basename(__FILE__));
@@ -199,6 +199,9 @@ final class HubSpot_Referrals {
         if (strpos($hook, 'hubspot-referrals') === false) {
             return;
         }
+        
+        // Enqueue WordPress media uploader
+        wp_enqueue_media();
         
         // Enqueue WordPress color picker
         wp_enqueue_style('wp-color-picker');

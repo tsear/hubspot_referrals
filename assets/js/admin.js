@@ -16,6 +16,8 @@
         bindGeneratorForm();
         bindSearchFilter();
         initColorPickers();
+        bindDirectoryToggle();
+        bindPartnerEdit();
     }
     
     /**
@@ -94,6 +96,100 @@
                     $row.show();
                 } else {
                     $row.hide();
+                }
+            });
+        });
+    }
+    
+    /**
+     * Bind directory toggle switches
+     */
+    function bindDirectoryToggle() {
+        $(document).on('change', '.hsr-directory-toggle', function() {
+            const $toggle = $(this);
+            const contactId = $toggle.data('contact-id');
+            const showInDirectory = $toggle.is(':checked');
+            
+            $.ajax({
+                url: config.ajaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'hsr_toggle_directory',
+                    nonce: config.nonce,
+                    contact_id: contactId,
+                    show_in_directory: showInDirectory ? '1' : '0'
+                },
+                success: function(response) {
+                    if (!response.success) {
+                        alert('Error: ' + (response.data.message || 'Failed to update'));
+                        $toggle.prop('checked', !showInDirectory);
+                    }
+                },
+                error: function() {
+                    alert('Network error. Please try again.');
+                    $toggle.prop('checked', !showInDirectory);
+                }
+            });
+        });
+    }
+    
+    /**
+     * Bind partner edit functionality
+     */
+    function bindPartnerEdit() {
+        // Media uploader for logo
+        let mediaUploader;
+        $('#hsr-upload-logo-btn').on('click', function(e) {
+            e.preventDefault();
+            
+            if (mediaUploader) {
+                mediaUploader.open();
+                return;
+            }
+            
+            mediaUploader = wp.media({
+                title: 'Select Partner Logo',
+                button: {
+                    text: 'Use this image'
+                },
+                multiple: false
+            });
+            
+            mediaUploader.on('select', function() {
+                const attachment = mediaUploader.state().get('selection').first().toJSON();
+                $('#partner_logo_url').val(attachment.url);
+            });
+            
+            mediaUploader.open();
+        });
+        
+        // Form submit
+        $('#hsr-partner-edit-form').on('submit', function(e) {
+            e.preventDefault();
+            
+            const $form = $(this);
+            const $btn = $form.find('button[type="submit"]');
+            const btnText = $btn.text();
+            
+            $btn.prop('disabled', true).text('Saving...');
+            
+            $.ajax({
+                url: config.ajaxUrl,
+                type: 'POST',
+                data: $form.serialize() + '&action=hsr_update_partner',
+                success: function(response) {
+                    if (response.success) {
+                        alert('Partner information updated successfully!');
+                        hsrClosePartnerModal();
+                        location.reload();
+                    } else {
+                        alert('Error: ' + (response.data.message || 'Failed to update'));
+                        $btn.prop('disabled', false).text(btnText);
+                    }
+                },
+                error: function() {
+                    alert('Network error. Please try again.');
+                    $btn.prop('disabled', false).text(btnText);
                 }
             });
         });
@@ -184,6 +280,40 @@
         a.download = 'referrals-' + new Date().toISOString().split('T')[0] + '.csv';
         a.click();
         window.URL.revokeObjectURL(url);
+    };
+    
+    window.hsrEditPartner = function(contactId, code) {
+        // Show modal
+        $('#hsr-partner-modal').fadeIn();
+        
+        // Set contact ID and code
+        $('#partner_contact_id').val(contactId);
+        $('#partner_code').val(code);
+        
+        // Load partner data
+        $.ajax({
+            url: config.ajaxUrl,
+            type: 'POST',
+            data: {
+                action: 'hsr_get_partner',
+                nonce: config.nonce,
+                contact_id: contactId
+            },
+            success: function(response) {
+                if (response.success) {
+                    const partner = response.data.partner;
+                    $('#partner_logo_url').val(partner.logo_url || '');
+                    $('#partner_description').val(partner.directory_description || '');
+                    $('#partner_website').val(partner.website_url || '');
+                    $('#partner_directory_order').val(partner.directory_order || 999);
+                }
+            }
+        });
+    };
+    
+    window.hsrClosePartnerModal = function() {
+        $('#hsr-partner-modal').fadeOut();
+        $('#hsr-partner-edit-form')[0].reset();
     };
 
     // Initialize when ready

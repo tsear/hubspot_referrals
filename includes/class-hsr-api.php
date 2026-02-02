@@ -230,6 +230,13 @@ class HSR_API {
             return array();
         }
         
+        // Check cache
+        $cache_key = 'hsr_api_cache_referrals';
+        $cached = get_transient($cache_key);
+        if ($cached !== false) {
+            return $cached;
+        }
+        
         // Get all contacts with referral_code (referrers)
         $result = $this->request('/crm/v3/objects/contacts/search', 'POST', array(
             'filterGroups' => array(
@@ -248,7 +255,12 @@ class HSR_API {
                 'lastname',
                 'company',
                 'referral_code',
-                'createdate'
+                'createdate',
+                'logo_url',
+                'directory_description',
+                'website_url',
+                'show_in_directory',
+                'directory_order'
             ),
             'limit' => 100
         ));
@@ -276,7 +288,12 @@ class HSR_API {
                 'created_at' => !empty($props['createdate']) ? date('Y-m-d H:i:s', strtotime($props['createdate'])) : 'N/A',
                 'hubspot_contact_id' => $contact['id'],
                 'conversion_count' => 0,
-                'referrals' => array()
+                'referrals' => array(),
+                'logo_url' => $props['logo_url'] ?? '',
+                'directory_description' => $props['directory_description'] ?? '',
+                'website_url' => $props['website_url'] ?? '',
+                'show_in_directory' => ($props['show_in_directory'] ?? '') === 'true',
+                'directory_order' => intval($props['directory_order'] ?? 999)
             );
         }
         
@@ -639,5 +656,24 @@ class HSR_API {
         delete_transient('hsr_api_cache_referrals');
         
         return !is_wp_error($result);
+    }
+    
+    /**
+     * Get partners marked for directory display
+     */
+    public function get_directory_partners() {
+        $all_referrals = $this->get_all_referrals();
+        
+        // Filter to only those with show_in_directory = true
+        $directory_partners = array_filter($all_referrals, function($partner) {
+            return !empty($partner['show_in_directory']);
+        });
+        
+        // Sort by directory_order
+        uasort($directory_partners, function($a, $b) {
+            return ($a['directory_order'] ?? 999) - ($b['directory_order'] ?? 999);
+        });
+        
+        return $directory_partners;
     }
 }

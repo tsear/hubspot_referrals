@@ -80,6 +80,15 @@ class HSR_Admin {
         
         add_submenu_page(
             'hubspot-referrals',
+            __('Partner Directory', 'hubspot-referrals'),
+            __('Partner Directory', 'hubspot-referrals'),
+            'manage_options',
+            'hubspot-referrals-directory',
+            array($this, 'render_directory')
+        );
+        
+        add_submenu_page(
+            'hubspot-referrals',
             __('Bulk Import', 'hubspot-referrals'),
             __('Bulk Import', 'hubspot-referrals'),
             'manage_options',
@@ -111,6 +120,11 @@ class HSR_Admin {
         
         // Fetch referral data
         $referral_codes = $api->get_all_referrals();
+        
+        // Initialize variables
+        if (!is_array($referral_codes)) {
+            $referral_codes = array();
+        }
         
         // Calculate stats
         $total_referrers = count($referral_codes);
@@ -264,6 +278,7 @@ class HSR_Admin {
                             <th><?php esc_html_e('Organization', 'hubspot-referrals'); ?></th>
                             <th><?php esc_html_e('Code', 'hubspot-referrals'); ?></th>
                             <th><?php esc_html_e('Conversions', 'hubspot-referrals'); ?></th>
+                            <th><?php esc_html_e('Directory', 'hubspot-referrals'); ?></th>
                             <th><?php esc_html_e('Created', 'hubspot-referrals'); ?></th>
                             <th><?php esc_html_e('Status', 'hubspot-referrals'); ?></th>
                             <th><?php esc_html_e('Actions', 'hubspot-referrals'); ?></th>
@@ -272,7 +287,7 @@ class HSR_Admin {
                     <tbody id="hsr-referral-tbody">
                         <?php if (empty($referral_codes)): ?>
                             <tr>
-                                <td colspan="7" style="text-align: center; padding: 40px;">
+                                <td colspan="8" style="text-align: center; padding: 40px;">
                                     <?php esc_html_e('No referrers yet. Use the generator above to create your first referral link.', 'hubspot-referrals'); ?>
                                 </td>
                             </tr>
@@ -281,7 +296,7 @@ class HSR_Admin {
                                 <?php 
                                 $referrals = $data['referrals'] ?? [];
                                 $conversion_count = $data['conversion_count'] ?? 0;
-                                $is_active = $conversion_count > 0 || (!empty($data['created_at']) && strpos($data['created_at'], date('Y-m')) === 0);
+                                $is_active = !empty($data['show_in_directory']);
                                 ?>
                                 <tr data-code="<?php echo esc_attr($code); ?>" data-search="<?php echo esc_attr(strtolower($data['first_name'] . ' ' . $data['last_name'] . ' ' . ($data['organization'] ?? '') . ' ' . $code)); ?>">
                                     <td>
@@ -299,6 +314,15 @@ class HSR_Admin {
                                             </button>
                                         <?php endif; ?>
                                     </td>
+                                    <td>
+                                        <label class="hsr-toggle-switch" title="<?php esc_attr_e('Show in Partner Directory', 'hubspot-referrals'); ?>">
+                                            <input type="checkbox" 
+                                                   class="hsr-directory-toggle" 
+                                                   data-contact-id="<?php echo esc_attr($data['hubspot_contact_id']); ?>"
+                                                   <?php checked($data['show_in_directory'] ?? false); ?>>
+                                            <span class="hsr-toggle-slider"></span>
+                                        </label>
+                                    </td>
                                     <td><?php echo esc_html(!empty($data['created_at']) ? date('M j, Y', strtotime($data['created_at'])) : 'N/A'); ?></td>
                                     <td>
                                         <span class="hsr-status-badge <?php echo $is_active ? 'active' : 'inactive'; ?>">
@@ -306,6 +330,9 @@ class HSR_Admin {
                                         </span>
                                     </td>
                                     <td class="hsr-actions">
+                                        <button type="button" class="button button-small" onclick="hsrEditPartner('<?php echo esc_js($data['hubspot_contact_id']); ?>', '<?php echo esc_js($code); ?>')" title="<?php esc_attr_e('Edit Directory Info', 'hubspot-referrals'); ?>">
+                                            ✏️
+                                        </button>
                                         <button type="button" class="button button-small" onclick="hsrCopyReferralLink('<?php echo esc_js($code); ?>')" title="<?php esc_attr_e('Copy Link', 'hubspot-referrals'); ?>">
                                             📋
                                         </button>
@@ -348,7 +375,423 @@ class HSR_Admin {
                     </tbody>
                 </table>
             </div>
+            
+            <!-- Partner Edit Modal -->
+            <div id="hsr-partner-modal" class="hsr-modal" style="display: none;">
+                <div class="hsr-modal-content">
+                    <div class="hsr-modal-header">
+                        <h2><?php esc_html_e('Edit Partner Directory Info', 'hubspot-referrals'); ?></h2>
+                        <button type="button" class="hsr-modal-close" onclick="hsrClosePartnerModal()">&times;</button>
+                    </div>
+                    <form id="hsr-partner-edit-form">
+                        <?php wp_nonce_field('hsr_update_partner', 'hsr_partner_nonce'); ?>
+                        <input type="hidden" id="partner_contact_id" name="contact_id">
+                        <input type="hidden" id="partner_code" name="code">
+                        
+                        <div class="hsr-form-group">
+                            <label for="partner_logo_url"><?php esc_html_e('Logo URL', 'hubspot-referrals'); ?></label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="url" id="partner_logo_url" name="logo_url" class="regular-text" placeholder="https://example.com/logo.png" style="flex: 1;">
+                                <button type="button" class="button" id="hsr-upload-logo-btn">
+                                    <?php esc_html_e('Upload', 'hubspot-referrals'); ?>
+                                </button>
+                            </div>
+                            <p class="description"><?php esc_html_e('Upload or enter the full URL to the partner\'s logo image', 'hubspot-referrals'); ?></p>
+                        </div>
+                        
+                        <div class="hsr-form-group">
+                            <label for="partner_description"><?php esc_html_e('Directory Description', 'hubspot-referrals'); ?></label>
+                            <textarea id="partner_description" name="directory_description" class="large-text" rows="4" placeholder="<?php esc_attr_e('Brief description of the partner organization...', 'hubspot-referrals'); ?>"></textarea>
+                            <p class="description"><?php esc_html_e('This description will appear on the public partner directory', 'hubspot-referrals'); ?></p>
+                        </div>
+                        
+                        <div class="hsr-form-group">
+                            <label for="partner_website"><?php esc_html_e('Website URL', 'hubspot-referrals'); ?></label>
+                            <input type="url" id="partner_website" name="website_url" class="regular-text" placeholder="https://example.com">
+                            <p class="description"><?php esc_html_e('Partner\'s website (for "Learn More" button)', 'hubspot-referrals'); ?></p>
+                        </div>
+                        
+                        <div class="hsr-form-group">
+                            <label for="partner_directory_order"><?php esc_html_e('Display Order', 'hubspot-referrals'); ?></label>
+                            <input type="number" id="partner_directory_order" name="directory_order" class="small-text" value="999" min="0">
+                            <p class="description"><?php esc_html_e('Lower numbers appear first (0-999)', 'hubspot-referrals'); ?></p>
+                        </div>
+                        
+                        <div class="hsr-modal-footer">
+                            <button type="button" class="button" onclick="hsrClosePartnerModal()"><?php esc_html_e('Cancel', 'hubspot-referrals'); ?></button>
+                            <button type="submit" class="button button-primary"><?php esc_html_e('Save Changes', 'hubspot-referrals'); ?></button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
+        <?php
+    }
+    
+    /**
+     * Render partner directory management page
+     */
+    public function render_directory() {
+        // Save settings if posted
+        if (isset($_POST['hsr_directory_settings_nonce']) && 
+            wp_verify_nonce($_POST['hsr_directory_settings_nonce'], 'hsr_directory_settings')) {
+            
+            $directory_settings = array(
+                'columns' => sanitize_text_field($_POST['directory_columns'] ?? '3'),
+                'show_description' => isset($_POST['directory_show_description']) ? '1' : '0',
+                'card_bg_color' => sanitize_hex_color($_POST['directory_card_bg'] ?? '#ffffff'),
+                'card_border_color' => sanitize_hex_color($_POST['directory_card_border'] ?? '#e5e7eb'),
+                'card_hover_border' => sanitize_hex_color($_POST['directory_card_hover_border'] ?? '#3b82f6'),
+                'button_bg_color' => sanitize_hex_color($_POST['directory_button_bg'] ?? '#3b82f6'),
+                'button_hover_color' => sanitize_hex_color($_POST['directory_button_hover'] ?? '#2563eb'),
+                'title_color' => sanitize_hex_color($_POST['directory_title_color'] ?? '#111827'),
+                'description_color' => sanitize_hex_color($_POST['directory_description_color'] ?? '#6b7280'),
+                'logo_bg_color' => sanitize_hex_color($_POST['directory_logo_bg'] ?? '#f9fafb'),
+                'card_radius' => sanitize_text_field($_POST['directory_card_radius'] ?? '8px'),
+                'gap' => sanitize_text_field($_POST['directory_gap'] ?? '24px'),
+            );
+            
+            update_option('hsr_directory_settings', $directory_settings);
+            
+            echo '<div class="notice notice-success is-dismissible"><p>' . 
+                 esc_html__('Directory settings saved successfully!', 'hubspot-referrals') . 
+                 '</p></div>';
+        }
+        
+        // Get current settings
+        $settings = get_option('hsr_directory_settings', array(
+            'columns' => '3',
+            'show_description' => '1',
+            'card_bg_color' => '#ffffff',
+            'card_border_color' => '#e5e7eb',
+            'card_hover_border' => '#3b82f6',
+            'button_bg_color' => '#3b82f6',
+            'button_hover_color' => '#2563eb',
+            'title_color' => '#111827',
+            'description_color' => '#6b7280',
+            'logo_bg_color' => '#f9fafb',
+            'card_radius' => '8px',
+            'gap' => '24px',
+        ));
+        
+        // Get partners for preview
+        $api = HSR_API::instance();
+        $all_partners = array();
+        $directory_count = 0;
+        
+        if ($api->is_configured()) {
+            $all_partners = $api->get_all_referrals();
+            $directory_count = count(array_filter($all_partners, function($p) {
+                return !empty($p['show_in_directory']);
+            }));
+        }
+        
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Partner Directory', 'hubspot-referrals'); ?></h1>
+            
+            <div class="hsr-directory-admin">
+                <div class="hsr-directory-grid-admin">
+                    <!-- Left Column: Shortcode & Preview -->
+                    <div class="hsr-directory-main">
+                        <!-- Shortcode Box -->
+                        <div class="hsr-card">
+                            <h2><?php esc_html_e('Shortcode', 'hubspot-referrals'); ?></h2>
+                            <p><?php esc_html_e('Copy and paste this shortcode into any page to display the partner directory:', 'hubspot-referrals'); ?></p>
+                            
+                            <div class="hsr-shortcode-box">
+                                <code id="hsr-directory-shortcode">[hsr_partner_directory]</code>
+                                <button type="button" class="button" onclick="hsrCopyDirectoryShortcode()">
+                                    📋 <?php esc_html_e('Copy', 'hubspot-referrals'); ?>
+                                </button>
+                            </div>
+                            
+                            <details style="margin-top: 15px;">
+                                <summary style="cursor: pointer; font-weight: 600;">
+                                    <?php esc_html_e('Advanced Options', 'hubspot-referrals'); ?>
+                                </summary>
+                                <div style="margin-top: 10px; padding: 10px; background: #f9fafb; border-radius: 4px;">
+                                    <p><strong><?php esc_html_e('Customize per page:', 'hubspot-referrals'); ?></strong></p>
+                                    <code>[hsr_partner_directory columns="3" show_description="true" max_partners="12"]</code>
+                                    <ul style="margin-top: 10px; list-style: disc; margin-left: 20px; font-size: 13px;">
+                                        <li><strong>columns</strong>: Number of columns (2, 3, or 4)</li>
+                                        <li><strong>show_description</strong>: Show descriptions (true/false)</li>
+                                        <li><strong>max_partners</strong>: Maximum number to display</li>
+                                    </ul>
+                                </div>
+                            </details>
+                        </div>
+                        
+                        <!-- Stats Box -->
+                        <div class="hsr-card">
+                            <h2><?php esc_html_e('Directory Status', 'hubspot-referrals'); ?></h2>
+                            <div class="hsr-directory-stats">
+                                <div class="hsr-stat-item">
+                                    <div class="hsr-stat-number"><?php echo esc_html($directory_count); ?></div>
+                                    <div class="hsr-stat-label"><?php esc_html_e('Partners in Directory', 'hubspot-referrals'); ?></div>
+                                </div>
+                                <div class="hsr-stat-item">
+                                    <div class="hsr-stat-number"><?php echo esc_html(count($all_partners)); ?></div>
+                                    <div class="hsr-stat-label"><?php esc_html_e('Total Partners', 'hubspot-referrals'); ?></div>
+                                </div>
+                            </div>
+                            
+                            <p style="margin-top: 15px;">
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=hubspot-referrals')); ?>" class="button">
+                                    <?php esc_html_e('Manage Partners →', 'hubspot-referrals'); ?>
+                                </a>
+                            </p>
+                        </div>
+                        
+                        <!-- Instructions -->
+                        <div class="hsr-card">
+                            <h2><?php esc_html_e('How to Add Partners to Directory', 'hubspot-referrals'); ?></h2>
+                            <ol style="margin-left: 20px; line-height: 1.8;">
+                                <li><?php esc_html_e('Go to the main Referrals Dashboard', 'hubspot-referrals'); ?></li>
+                                <li><?php esc_html_e('Find the partner you want to feature', 'hubspot-referrals'); ?></li>
+                                <li><?php esc_html_e('Toggle the "Directory" switch to ON', 'hubspot-referrals'); ?></li>
+                                <li><?php esc_html_e('Click the ✏️ edit icon to add:', 'hubspot-referrals'); ?>
+                                    <ul style="margin-left: 20px; list-style: circle;">
+                                        <li><?php esc_html_e('Partner logo URL', 'hubspot-referrals'); ?></li>
+                                        <li><?php esc_html_e('Description for directory', 'hubspot-referrals'); ?></li>
+                                        <li><?php esc_html_e('Website URL', 'hubspot-referrals'); ?></li>
+                                        <li><?php esc_html_e('Display order (0-999)', 'hubspot-referrals'); ?></li>
+                                    </ul>
+                                </li>
+                                <li><?php esc_html_e('Partner appears instantly in your directory!', 'hubspot-referrals'); ?></li>
+                            </ol>
+                        </div>
+                    </div>
+                    
+                    <!-- Right Column: Settings -->
+                    <div class="hsr-directory-sidebar">
+                        <div class="hsr-card">
+                            <h2><?php esc_html_e('Directory Appearance', 'hubspot-referrals'); ?></h2>
+                            <p><?php esc_html_e('Customize how the partner directory looks on your site.', 'hubspot-referrals'); ?></p>
+                            
+                            <form method="post" action="">
+                                <?php wp_nonce_field('hsr_directory_settings', 'hsr_directory_settings_nonce'); ?>
+                                
+                                <table class="form-table">
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="directory_columns"><?php esc_html_e('Columns', 'hubspot-referrals'); ?></label>
+                                        </th>
+                                        <td>
+                                            <select name="directory_columns" id="directory_columns">
+                                                <option value="2" <?php selected($settings['columns'], '2'); ?>>2 <?php esc_html_e('columns', 'hubspot-referrals'); ?></option>
+                                                <option value="3" <?php selected($settings['columns'], '3'); ?>>3 <?php esc_html_e('columns', 'hubspot-referrals'); ?></option>
+                                                <option value="4" <?php selected($settings['columns'], '4'); ?>>4 <?php esc_html_e('columns', 'hubspot-referrals'); ?></option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th scope="row">
+                                            <?php esc_html_e('Show Descriptions', 'hubspot-referrals'); ?>
+                                        </th>
+                                        <td>
+                                            <label>
+                                                <input type="checkbox" name="directory_show_description" value="1" <?php checked($settings['show_description'], '1'); ?>>
+                                                <?php esc_html_e('Display partner descriptions', 'hubspot-referrals'); ?>
+                                            </label>
+                                        </td>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th colspan="2" style="padding-top: 20px;">
+                                            <h3 style="margin: 0;"><?php esc_html_e('Colors', 'hubspot-referrals'); ?></h3>
+                                        </th>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="directory_card_bg"><?php esc_html_e('Card Background', 'hubspot-referrals'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="text" name="directory_card_bg" id="directory_card_bg" value="<?php echo esc_attr($settings['card_bg_color']); ?>" class="hsr-color-picker">
+                                        </td>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="directory_card_border"><?php esc_html_e('Card Border', 'hubspot-referrals'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="text" name="directory_card_border" id="directory_card_border" value="<?php echo esc_attr($settings['card_border_color']); ?>" class="hsr-color-picker">
+                                        </td>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="directory_card_hover_border"><?php esc_html_e('Card Hover Border', 'hubspot-referrals'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="text" name="directory_card_hover_border" id="directory_card_hover_border" value="<?php echo esc_attr($settings['card_hover_border']); ?>" class="hsr-color-picker">
+                                        </td>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="directory_button_bg"><?php esc_html_e('Button Background', 'hubspot-referrals'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="text" name="directory_button_bg" id="directory_button_bg" value="<?php echo esc_attr($settings['button_bg_color']); ?>" class="hsr-color-picker">
+                                        </td>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="directory_button_hover"><?php esc_html_e('Button Hover', 'hubspot-referrals'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="text" name="directory_button_hover" id="directory_button_hover" value="<?php echo esc_attr($settings['button_hover_color']); ?>" class="hsr-color-picker">
+                                        </td>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="directory_title_color"><?php esc_html_e('Title Color', 'hubspot-referrals'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="text" name="directory_title_color" id="directory_title_color" value="<?php echo esc_attr($settings['title_color']); ?>" class="hsr-color-picker">
+                                        </td>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="directory_description_color"><?php esc_html_e('Description Color', 'hubspot-referrals'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="text" name="directory_description_color" id="directory_description_color" value="<?php echo esc_attr($settings['description_color']); ?>" class="hsr-color-picker">
+                                        </td>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th colspan="2" style="padding-top: 20px;">
+                                            <h3 style="margin: 0;"><?php esc_html_e('Layout', 'hubspot-referrals'); ?></h3>
+                                        </th>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="directory_card_radius"><?php esc_html_e('Card Border Radius', 'hubspot-referrals'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="text" name="directory_card_radius" id="directory_card_radius" value="<?php echo esc_attr($settings['card_radius']); ?>" class="small-text">
+                                            <p class="description"><?php esc_html_e('e.g., 8px, 12px, 0px', 'hubspot-referrals'); ?></p>
+                                        </td>
+                                    </tr>
+                                    
+                                    <tr>
+                                        <th scope="row">
+                                            <label for="directory_gap"><?php esc_html_e('Card Gap', 'hubspot-referrals'); ?></label>
+                                        </th>
+                                        <td>
+                                            <input type="text" name="directory_gap" id="directory_gap" value="<?php echo esc_attr($settings['gap']); ?>" class="small-text">
+                                            <p class="description"><?php esc_html_e('Spacing between cards (e.g., 24px)', 'hubspot-referrals'); ?></p>
+                                        </td>
+                                    </tr>
+                                </table>
+                                
+                                <p class="submit">
+                                    <button type="submit" class="button button-primary button-large">
+                                        <?php esc_html_e('Save Appearance Settings', 'hubspot-referrals'); ?>
+                                    </button>
+                                </p>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+        function hsrCopyDirectoryShortcode() {
+            const shortcode = document.getElementById('hsr-directory-shortcode');
+            const range = document.createRange();
+            range.selectNode(shortcode);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            document.execCommand('copy');
+            window.getSelection().removeAllRanges();
+            alert('<?php esc_html_e('Shortcode copied to clipboard!', 'hubspot-referrals'); ?>');
+        }
+        </script>
+        
+        <style>
+        .hsr-directory-admin {
+            margin-top: 20px;
+        }
+        
+        .hsr-directory-grid-admin {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+        }
+        
+        .hsr-card {
+            background: #fff;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .hsr-card h2 {
+            margin-top: 0;
+            font-size: 18px;
+        }
+        
+        .hsr-shortcode-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: #f9fafb;
+            border: 2px dashed #3b82f6;
+            border-radius: 8px;
+        }
+        
+        .hsr-shortcode-box code {
+            flex: 1;
+            font-size: 16px;
+            background: transparent;
+            padding: 0;
+        }
+        
+        .hsr-directory-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .hsr-stat-item {
+            text-align: center;
+            padding: 20px;
+            background: #f9fafb;
+            border-radius: 8px;
+        }
+        
+        .hsr-stat-number {
+            font-size: 36px;
+            font-weight: 700;
+            color: #3b82f6;
+        }
+        
+        .hsr-stat-label {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 5px;
+        }
+        
+        @media (max-width: 1200px) {
+            .hsr-directory-grid-admin {
+                grid-template-columns: 1fr;
+            }
+        }
+        </style>
         <?php
     }
     

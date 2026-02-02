@@ -40,6 +40,9 @@ class HSR_Ajax {
         add_action('wp_ajax_hsr_refresh_data', array($this, 'refresh_data'));
         add_action('wp_ajax_hsr_bulk_import', array($this, 'bulk_import'));
         add_action('wp_ajax_hsr_clear_logs', array($this, 'clear_logs'));
+        add_action('wp_ajax_hsr_update_partner', array($this, 'update_partner'));
+        add_action('wp_ajax_hsr_toggle_directory', array($this, 'toggle_directory'));
+        add_action('wp_ajax_hsr_get_partner', array($this, 'get_partner'));
         
         // Public AJAX (for frontend forms)
         add_action('wp_ajax_hsr_generate_referral_link', array($this, 'generate_code'));
@@ -453,5 +456,115 @@ class HSR_Ajax {
         </html>
         <?php
         exit;
+    }
+    
+    /**
+     * Update partner directory information
+     */
+    public function update_partner() {
+        check_ajax_referer('hsr_update_partner', 'hsr_partner_nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'hubspot-referrals')));
+        }
+        
+        $contact_id = sanitize_text_field($_POST['contact_id'] ?? '');
+        $logo_url = esc_url_raw($_POST['logo_url'] ?? '');
+        $directory_description = sanitize_textarea_field($_POST['directory_description'] ?? '');
+        $website_url = esc_url_raw($_POST['website_url'] ?? '');
+        $directory_order = intval($_POST['directory_order'] ?? 999);
+        
+        if (empty($contact_id)) {
+            wp_send_json_error(array('message' => __('Invalid contact ID.', 'hubspot-referrals')));
+        }
+        
+        $api = HSR_API::instance();
+        $properties = array(
+            'logo_url' => $logo_url,
+            'directory_description' => $directory_description,
+            'website_url' => $website_url,
+            'directory_order' => (string) $directory_order
+        );
+        
+        $success = $api->update_contact($contact_id, $properties);
+        
+        if ($success) {
+            // Clear cache
+            delete_transient('hsr_api_cache_referrals');
+            
+            wp_send_json_success(array(
+                'message' => __('Partner information updated successfully.', 'hubspot-referrals')
+            ));
+        } else {
+            wp_send_json_error(array(
+                'message' => __('Failed to update partner information.', 'hubspot-referrals')
+            ));
+        }
+    }
+    
+    /**
+     * Toggle partner directory visibility
+     */
+    public function toggle_directory() {
+        check_ajax_referer('hsr_admin', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'hubspot-referrals')));
+        }
+        
+        $contact_id = sanitize_text_field($_POST['contact_id'] ?? '');
+        $show_in_directory = filter_var($_POST['show_in_directory'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        
+        if (empty($contact_id)) {
+            wp_send_json_error(array('message' => __('Invalid contact ID.', 'hubspot-referrals')));
+        }
+        
+        $api = HSR_API::instance();
+        $success = $api->update_contact($contact_id, array(
+            'show_in_directory' => $show_in_directory ? 'true' : 'false'
+        ));
+        
+        if ($success) {
+            // Clear cache
+            delete_transient('hsr_api_cache_referrals');
+            
+            wp_send_json_success(array(
+                'message' => __('Directory visibility updated.', 'hubspot-referrals')
+            ));
+        } else {
+            wp_send_json_error(array(
+                'message' => __('Failed to update directory visibility.', 'hubspot-referrals')
+            ));
+        }
+    }
+    
+    /**
+     * Get partner data for editing
+     */
+    public function get_partner() {
+        check_ajax_referer('hsr_admin', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'hubspot-referrals')));
+        }
+        
+        $contact_id = sanitize_text_field($_POST['contact_id'] ?? '');
+        
+        if (empty($contact_id)) {
+            wp_send_json_error(array('message' => __('Invalid contact ID.', 'hubspot-referrals')));
+        }
+        
+        $api = HSR_API::instance();
+        $result = $api->get_contact($contact_id);
+        
+        if (!is_wp_error($result) && !empty($result['data']['properties'])) {
+            wp_send_json_success(array(
+                'partner' => $result['data']['properties']
+            ));
+        } else {
+            wp_send_json_error(array(
+                'message' => __('Failed to load partner data.', 'hubspot-referrals')
+            ));
+        }
     }
 }

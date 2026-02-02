@@ -38,6 +38,7 @@ class HSR_Shortcodes {
         add_shortcode('hubspot_referral_form', array($this, 'request_code_form')); // Alias
         add_shortcode('hsr_partner_dashboard', array($this, 'partner_dashboard'));
         add_shortcode('hubspot_partner_stats', array($this, 'partner_dashboard')); // Alias
+        add_shortcode('hsr_partner_directory', array($this, 'partner_directory'));
     }
     
     /**
@@ -108,6 +109,27 @@ class HSR_Shortcodes {
         
         ob_start();
         include HSR_PLUGIN_DIR . 'templates/partner-dashboard.php';
+        return ob_get_clean();
+    }
+    
+    /**
+     * Partner Directory - shows partners marked for directory display
+     * 
+     * Usage: [hsr_partner_directory]
+     */
+    public function partner_directory($atts) {
+        $atts = shortcode_atts(array(
+            'columns' => '3',
+            'limit' => '50',
+            'show_description' => '1'
+        ), $atts, 'hsr_partner_directory');
+        
+        // Get directory partners from HubSpot
+        $api = HSR_API::instance();
+        $directory_partners = $api->get_directory_partners();
+        
+        ob_start();
+        include HSR_PLUGIN_DIR . 'templates/partner-directory.php';
         return ob_get_clean();
     }
 }
